@@ -35,7 +35,11 @@
  *
  * Workaround: mask EXL bit of the result or place a nop before mfc0.
  */
+#ifdef CONFIG_LOONGSON3_ENHANCEMENT
 notrace void arch_local_irq_disable(void)
+#else
+notrace __attribute__ ((__aligned__(64))) void arch_local_irq_disable(void)
+#endif
 {
 	preempt_disable();
 

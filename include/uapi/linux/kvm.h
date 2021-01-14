@@ -639,6 +639,16 @@ struct kvm_s390_irq_state {
 	__u32 reserved[4];  /* will stay unused for compatibility reasons */
 };
 
+struct kvm_mips_vcpu_state {
+	__u8 online_vcpus;
+	__u8 is_migrate;
+	__u32 cpu_freq;
+	__u32 count_ctl;
+	__u64 pending_exceptions;
+	__u64 pending_exceptions_clr;
+	__u64 core_ext_ioisr[4];
+ };
+
 /* for KVM_SET_GUEST_DEBUG */
 
 #define KVM_GUESTDBG_ENABLE		0x00000001
@@ -1378,6 +1388,12 @@ struct kvm_s390_ucas_mapping {
 #define KVM_S390_GET_IRQ_STATE	  _IOW(KVMIO, 0xb6, struct kvm_s390_irq_state)
 /* Available with KVM_CAP_X86_SMM */
 #define KVM_SMI                   _IO(KVMIO,   0xb7)
+/* Add for LOONGSON read nodecounter */
+#define KVM_LSVZ_NODECOUNTER       _IOR(KVMIO,   0xb8, unsigned long)
+#define KVM_MIPS_GET_VCPU_STATE   _IOR(KVMIO,   0xb9, struct kvm_mips_vcpu_state)
+#define KVM_MIPS_SET_VCPU_STATE   _IOW(KVMIO,   0xba, struct kvm_mips_vcpu_state)
+#define KVM_MIPS_GET_CPUCFG	 _IOR(KVMIO,   0xbb, struct kvm_cpucfg)
+
 /* Available with KVM_CAP_S390_CMMA_MIGRATION */
 #define KVM_S390_GET_CMMA_BITS      _IOWR(KVMIO, 0xb8, struct kvm_s390_cmma_log)
 #define KVM_S390_SET_CMMA_BITS      _IOW(KVMIO, 0xb9, struct kvm_s390_cmma_log)

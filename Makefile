@@ -3,6 +3,7 @@ VERSION = 4
 PATCHLEVEL = 19
 SUBLEVEL = 90
 EXTRAVERSION =
+LOONGSON_RELEASE = 5
 NAME = "People's Front"
 
 # *DOCUMENTATION*
@@ -296,7 +297,7 @@ include scripts/Kbuild.include
 
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
-KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
+KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)$(if $(LOONGSON_RELEASE),-$(LOONGSON_RELEASE))
 export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
 
 include scripts/subarch.include

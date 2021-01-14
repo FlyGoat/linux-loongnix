@@ -95,7 +95,9 @@ extern unsigned long mips_stack_top(void);
 
 #define NUM_FPU_REGS	32
 
-#ifdef CONFIG_CPU_HAS_MSA
+#if defined(CONFIG_CPU_HAS_LASX)
+# define FPU_REG_WIDTH	256
+#elif defined(CONFIG_CPU_HAS_MSA)
 # define FPU_REG_WIDTH	128
 #else
 # define FPU_REG_WIDTH	64
@@ -238,7 +240,10 @@ typedef struct {
 	unsigned long seg;
 } mm_segment_t;
 
-#ifdef CONFIG_CPU_HAS_MSA
+#if defined(CONFIG_CPU_HAS_LASX)
+# define ARCH_MIN_TASKALIGN	32
+# define FPU_ALIGN		__aligned(32)
+#elif defined(CONFIG_CPU_HAS_MSA)
 # define ARCH_MIN_TASKALIGN	16
 # define FPU_ALIGN		__aligned(16)
 #else
@@ -368,6 +373,10 @@ struct task_struct;
 /* Free all resources held by a thread. */
 #define release_thread(thread) do { } while(0)
 
+enum idle_boot_override {IDLE_NO_OVERRIDE=0, IDLE_HALT, IDLE_NOMWAIT,
+			 IDLE_POLL};
+
+extern unsigned long		boot_option_idle_override;
 /*
  * Do necessary setup to start up a newly executed thread.
  */
@@ -433,6 +442,7 @@ extern int mips_get_process_fp_mode(struct task_struct *task);
 extern int mips_set_process_fp_mode(struct task_struct *task,
 				    unsigned int value);
 
+extern int arch_register_cpu(int cpu);
 #define GET_FP_MODE(task)		mips_get_process_fp_mode(task)
 #define SET_FP_MODE(task,value)		mips_set_process_fp_mode(task, value)
 

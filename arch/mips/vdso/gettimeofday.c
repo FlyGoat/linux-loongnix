@@ -116,11 +116,36 @@ static __always_inline u64 read_r4k_count(void)
 
 #endif
 
+static __always_inline u64 read_stable_count(void)
+{
+	unsigned long count;
+
+	__asm__ __volatile__(
+	"	.set push\n"
+	"	.set mips64r2\n"
+	"	rdhwr	%0, $30\n"
+	"	.set pop\n"
+	: "=r" (count));
+
+	return count;
+}
+
+#ifdef CONFIG_LOONGSON_HPET
+
+static __always_inline u64 read_hpet_count(const union mips_vdso_data *data)
+{
+	void __iomem *hpet = get_extimer(data);
+
+	return ____raw_readq(hpet + 0x10f0);
+}
+
+#endif
+
 #ifdef CONFIG_CLKSRC_MIPS_GIC
 
 static __always_inline u64 read_gic_count(const union mips_vdso_data *data)
 {
-	void __iomem *gic = get_gic(data);
+	void __iomem *gic = get_extimer(data);
 	u32 hi, hi2, lo;
 
 	do {
@@ -147,6 +172,14 @@ static __always_inline u64 get_ns(const union mips_vdso_data *data)
 #ifdef CONFIG_CLKSRC_MIPS_GIC
 	case VDSO_CLOCK_GIC:
 		cycle_now = read_gic_count(data);
+		break;
+#endif
+	case VDSO_CLOCK_STABLE:
+		cycle_now = read_stable_count();
+		break;
+#ifdef CONFIG_LOONGSON_HPET
+	case VDSO_CLOCK_HPET:
+		cycle_now = read_hpet_count(data);
 		break;
 #endif
 	default:

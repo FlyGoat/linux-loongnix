@@ -14,6 +14,10 @@
 #include <asm/isa-rev.h>
 #include <cpu-feature-overrides.h>
 
+#ifdef CONFIG_CPU_LOONGSON3
+#include <loongson_cpu.h>
+#endif
+
 #define __ase(ase)			(cpu_data[0].ases & (ase))
 #define __opt(opt)			(cpu_data[0].options & (opt))
 
@@ -505,6 +509,13 @@
 # define cpu_has_msa		0
 #endif
 
+#if defined(CONFIG_CPU_HAS_LASX) && !defined(cpu_has_lasx)
+# define cpu_has_lasx		(cpu_data[0].loongson_options & \
+						 LOONGSON_CPU_LASX)
+#elif !defined(cpu_has_lasx)
+# define cpu_has_lasx		0
+#endif
+
 #ifndef cpu_has_ufr
 # define cpu_has_ufr		__opt(MIPS_CPU_UFR)
 #endif
@@ -538,6 +549,10 @@
 
 #ifndef cpu_has_badinstrp
 # define cpu_has_badinstrp	__isa_ge_or_opt(6, MIPS_CPU_BADINSTRP)
+#endif
+
+#ifndef cpu_has_nestfeatures
+#define cpu_has_nestfeatures       (cpu_data[0].options & MIPS_CPU_NF)
 #endif
 
 #ifndef cpu_has_contextconfig
@@ -596,6 +611,11 @@
 # define cpu_has_mipsmt_pertccounters 0
 #endif /* CONFIG_MIPS_MT_SMP */
 
+#if defined(CONFIG_CPU_LOONGSON3)
+#ifndef cpu_has_lamo
+#define cpu_has_lamo    (cpu_data[0].lses & MIPS_HAS_LSE_LAMO)
+#endif
+#endif
 /*
  * Guest capabilities
  */
@@ -661,6 +681,9 @@
 #endif
 #ifndef cpu_guest_has_userlocal
 #define cpu_guest_has_userlocal	(cpu_data[0].guest.options & MIPS_CPU_ULRI)
+#endif
+#ifndef cpu_guest_has_nestfeatures
+#define cpu_guest_has_nestfeatures       (cpu_data[0].guest.options & MIPS_CPU_NF)
 #endif
 
 /*

@@ -32,6 +32,8 @@
 
 #include <ioremap.h>
 #include <mangle-port.h>
+#include <asm/early_ioremap.h>
+extern unsigned long _page_cachable_default;
 
 /*
  * Slowdown I/O port space accesses for antique hardware.
@@ -196,6 +198,7 @@ static inline void __iomem * __ioremap_mode(phys_addr_t offset, unsigned long si
 		 */
 		if (flags == _CACHE_UNCACHED)
 			base = (u64) IO_BASE;
+
 		return (void __iomem *) (unsigned long) (base + offset);
 	} else if (__builtin_constant_p(offset) &&
 		   __builtin_constant_p(size) && __builtin_constant_p(flags)) {
@@ -277,8 +280,8 @@ static inline void __iomem * __ioremap_mode(phys_addr_t offset, unsigned long si
  */
 #define ioremap_cachable(offset, size)					\
 	__ioremap_mode((offset), (size), _page_cachable_default)
-#define ioremap_cache ioremap_cachable
 
+#define ioremap_cache(offset, size)	ioremap_cachable((offset), (size))
 /*
  * ioremap_wc     -   map bus memory into CPU space
  * @offset:    bus address of the memory
@@ -316,7 +319,7 @@ static inline void iounmap(const volatile void __iomem *addr)
 #undef __IS_KSEG1
 }
 
-#if defined(CONFIG_CPU_CAVIUM_OCTEON) || defined(CONFIG_LOONGSON3_ENHANCEMENT)
+#if defined(CONFIG_CPU_CAVIUM_OCTEON) || defined(CONFIG_CPU_LOONGSON3)
 #define war_io_reorder_wmb()		wmb()
 #else
 #define war_io_reorder_wmb()		barrier()

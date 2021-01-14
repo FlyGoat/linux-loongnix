@@ -30,6 +30,10 @@
 #include "../pci.h"
 #include "portdrv.h"
 
+#ifdef CONFIG_CPU_LOONGSON3
+extern u32 cpu_guestmode;
+#endif
+
 #define AER_ERROR_SOURCES_MAX		100
 
 #define AER_MAX_TYPEOF_COR_ERRS		16	/* as per PCI_ERR_COR_STATUS */
@@ -1573,6 +1577,12 @@ static struct pcie_port_service_driver aerdriver = {
  */
 int __init pcie_aer_init(void)
 {
+#ifdef CONFIG_CPU_LOONGSON3
+	if(!cpu_guestmode){
+		return 0;
+	}
+#endif
+
 	if (!pci_aer_available() || aer_acpi_firmware_first())
 		return -ENXIO;
 	return pcie_port_service_register(&aerdriver);

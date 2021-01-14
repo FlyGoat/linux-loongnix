@@ -53,6 +53,15 @@
 #include "dwmac1000.h"
 #include "dwxgmac2.h"
 #include "hwif.h"
+#if defined(CONFIG_CPU_LOONGSON3)
+#include <linux/i2c.h>
+#include <loongson-pch.h>
+#include <ls7a-spiflash.h>
+
+#define MAC_OFFSET  0x10
+#define MAC_LEN     0x6
+#endif
+
 
 #define	STMMAC_ALIGN(x)		__ALIGN_KERNEL(x, SMP_CACHE_BYTES)
 #define	TSO_MAX_BUFF_SIZE	(SZ_16K - 1)
@@ -2138,6 +2147,20 @@ static int stmmac_get_hw_features(struct stmmac_priv *priv)
 	return stmmac_get_hw_feature(priv, priv->ioaddr, &priv->dma_cap) == 0;
 }
 
+#if defined(CONFIG_CPU_LOONGSON3)
+static int stmmac_spi_flash_get_mac_addr(struct stmmac_priv *priv, unsigned char *buf)
+{
+	struct pci_dev *pci = to_pci_dev(priv->device);
+	int devfn;
+
+	devfn = pci->devfn & 0x7;
+	ls_spiflash_read(devfn * MAC_OFFSET, buf, MAC_LEN);
+
+	return 0;
+}
+#endif
+
+
 /**
  * stmmac_check_ether_addr - check if the MAC addr is valid
  * @priv: driver private structure
@@ -2149,6 +2172,11 @@ static void stmmac_check_ether_addr(struct stmmac_priv *priv)
 {
 	if (!is_valid_ether_addr(priv->dev->dev_addr)) {
 		stmmac_get_umac_addr(priv, priv->hw, priv->dev->dev_addr, 0);
+#if defined(CONFIG_CPU_LOONGSON3)
+		if ((loongson_pch->type == LS7A) &&
+			(!is_valid_ether_addr(priv->dev->dev_addr)))
+			stmmac_spi_flash_get_mac_addr(priv, priv->dev->dev_addr);
+#endif
 		if (!is_valid_ether_addr(priv->dev->dev_addr))
 			eth_hw_addr_random(priv->dev);
 		netdev_info(priv->dev, "device MAC address %pM\n",

@@ -288,6 +288,14 @@ config GPIO_IOP
 
 	  If unsure, say N.
 
+config GPIO_LS2K
+	tristate "loongson-2k GPIO support"
+	depends on CPU_LOONGSON2K
+	default m
+	help
+	  Say yes here to support the on-chip GPIO lines on the Loongson2k
+	  family of SOCs.
+
 config GPIO_LOONGSON
 	bool "Loongson-2/3 GPIO support"
 	depends on CPU_LOONGSON2 || CPU_LOONGSON3
@@ -386,6 +394,13 @@ config GPIO_MXS
 	depends on ARCH_MXS
 	select GPIO_GENERIC
 	select GENERIC_IRQ_CHIP
+
+config GPIO_NCT6102
+	bool "NCT6102 GPIO driver"
+	def_bool y
+	depends on CPU_LOONGSON3
+	help
+	  Say yes here to support the NCT6102 GPIO device
 
 config GPIO_OCTEON
 	tristate "Cavium OCTEON GPIO"

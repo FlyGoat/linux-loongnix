@@ -57,6 +57,9 @@ __setup("noxpa", xpa_disable);
  */
 extern void tlb_do_page_fault_0(void);
 extern void tlb_do_page_fault_1(void);
+#ifdef CONFIG_CPU_LOONGSON3
+extern int guest_fixup;
+#endif
 
 struct work_registers {
 	int r1;
@@ -81,6 +84,15 @@ static inline int r4k_250MHZhwbug(void)
 {
 	/* XXX: We should probe for the presence of this bug, but we don't. */
 	return 0;
+}
+
+static inline int ls3a4000guest_fixup(void)
+{
+#ifdef CONFIG_CPU_LOONGSON3
+	return guest_fixup;
+#else
+	return 0;
+#endif
 }
 
 static inline int __maybe_unused bcm1250_m3_war(void)
@@ -176,6 +188,8 @@ enum label_id {
 #ifdef CONFIG_MIPS_HUGE_TLB_SUPPORT
 	label_tlb_huge_update,
 #endif
+	label_random,
+	label_huge_random,
 };
 
 UASM_L_LA(_second_part)
@@ -195,6 +209,8 @@ UASM_L_LA(_large_segbits_fault)
 #ifdef CONFIG_MIPS_HUGE_TLB_SUPPORT
 UASM_L_LA(_tlb_huge_update)
 #endif
+UASM_L_LA(_random)
+UASM_L_LA(_huge_random)
 
 static int hazard_instance;
 
@@ -574,6 +590,7 @@ void build_tlb_write_entry(u32 **p, struct uasm_label **l,
 	case CPU_BMIPS5000:
 	case CPU_LOONGSON2:
 	case CPU_LOONGSON3:
+	case CPU_LOONGSON2K:
 	case CPU_R5500:
 		if (m4kc_tlbp_war())
 			uasm_i_nop(p);
@@ -790,7 +807,17 @@ static void build_huge_handler_tail(u32 **p, struct uasm_reloc **r,
 	}
 
 	build_huge_update_entries(p, pte, ptr);
+	if (ls3a4000guest_fixup()) {
+		build_tlb_probe_entry(p);
+		uasm_i_mfc0(p, ptr, C0_INDEX);
+		uasm_il_bltz(p, r, ptr, label_huge_random);
+		uasm_i_nop(p);
+	}
 	build_huge_tlb_write_entry(p, l, r, pte, tlb_indexed, 0);
+	if (ls3a4000guest_fixup()) {
+		uasm_l_huge_random(l, *p);
+		build_huge_tlb_write_entry(p, l, r, pte, tlb_random, 0);
+	}
 }
 #endif /* CONFIG_MIPS_HUGE_TLB_SUPPORT */
 
@@ -943,6 +970,8 @@ build_get_pgd_vmalloc64(u32 **p, struct uasm_label **l, struct uasm_reloc **r,
 		 * to mimic that here by taking a load/istream page
 		 * fault.
 		 */
+		if (IS_ENABLED(CONFIG_CPU_LOONGSON3_WORKAROUNDS))
+			uasm_i_sync(p, 0);
 		UASM_i_LA(p, ptr, (unsigned long)tlb_do_page_fault_0);
 		uasm_i_jr(p, ptr);
 
@@ -1479,6 +1508,7 @@ static void build_r4000_tlb_refill_handler(void)
 
 static void setup_pw(void)
 {
+	unsigned int pwctl;
 	unsigned long pgd_i, pgd_w;
 #ifndef __PAGETABLE_PMD_FOLDED
 	unsigned long pmd_i, pmd_w;
@@ -1505,6 +1535,7 @@ static void setup_pw(void)
 
 	pte_i = ilog2(_PAGE_GLOBAL);
 	pte_w = 0;
+	pwctl = 1 << 30; /* set PWDirExt but NOT used it */
 
 #ifndef __PAGETABLE_PMD_FOLDED
 	write_c0_pwfield(pgd_i << 24 | pmd_i << 12 | pt_i << 6 | pte_i);
@@ -1515,8 +1546,9 @@ static void setup_pw(void)
 #endif
 
 #ifdef CONFIG_MIPS_HUGE_TLB_SUPPORT
-	write_c0_pwctl(1 << 6 | psn);
+	pwctl |= (1 << 6 | psn);
 #endif
+	write_c0_pwctl(pwctl);
 	write_c0_kpgd((long)swapper_pg_dir);
 	kscratch_used_mask |= (1 << 7); /* KScratch6 is used for KPGD */
 }
@@ -1663,6 +1695,8 @@ static void
 iPTE_LW(u32 **p, unsigned int pte, unsigned int ptr)
 {
 #ifdef CONFIG_SMP
+	if (IS_ENABLED(CONFIG_CPU_LOONGSON3_WORKAROUNDS))
+		uasm_i_sync(p, 0);
 # ifdef CONFIG_PHYS_ADDR_T_64BIT
 	if (cpu_has_64bits)
 		uasm_i_lld(p, pte, 0, ptr);
@@ -2089,10 +2123,22 @@ build_r4000_tlbchange_handler_tail(u32 **p, struct uasm_label **l,
 	uasm_i_ori(p, ptr, ptr, sizeof(pte_t));
 	uasm_i_xori(p, ptr, ptr, sizeof(pte_t));
 	build_update_entries(p, tmp, ptr);
+	if (ls3a4000guest_fixup()) {
+		build_tlb_probe_entry(p);
+		uasm_i_mfc0(p, tmp, C0_INDEX);
+		uasm_il_bltz(p, r, tmp, label_random);
+		uasm_i_nop(p);
+	}
 	build_tlb_write_entry(p, l, r, tlb_indexed);
 	uasm_l_leave(l, *p);
 	build_restore_work_registers(p);
 	uasm_i_eret(p); /* return from trap */
+	if (ls3a4000guest_fixup()) {
+		uasm_l_random(l, *p);
+		build_tlb_write_entry(p, l, r, tlb_random);
+		uasm_il_b(p, r, label_leave);
+		uasm_i_nop(p);
+	}
 
 #ifdef CONFIG_64BIT
 	build_get_pgd_vmalloc64(p, l, r, tmp, ptr, not_refill);
@@ -2276,6 +2322,8 @@ static void build_r4000_tlb_load_handler(void)
 #endif
 
 	uasm_l_nopage_tlbl(&l, p);
+	if (IS_ENABLED(CONFIG_CPU_LOONGSON3_WORKAROUNDS))
+		uasm_i_sync(&p, 0);
 	build_restore_work_registers(&p);
 #ifdef CONFIG_CPU_MICROMIPS
 	if ((unsigned long)tlb_do_page_fault_0 & 1) {
@@ -2330,6 +2378,8 @@ static void build_r4000_tlb_store_handler(void)
 #endif
 
 	uasm_l_nopage_tlbs(&l, p);
+	if (IS_ENABLED(CONFIG_CPU_LOONGSON3_WORKAROUNDS))
+		uasm_i_sync(&p, 0);
 	build_restore_work_registers(&p);
 #ifdef CONFIG_CPU_MICROMIPS
 	if ((unsigned long)tlb_do_page_fault_1 & 1) {
@@ -2385,6 +2435,8 @@ static void build_r4000_tlb_modify_handler(void)
 #endif
 
 	uasm_l_nopage_tlbm(&l, p);
+	if (IS_ENABLED(CONFIG_CPU_LOONGSON3_WORKAROUNDS))
+		uasm_i_sync(&p, 0);
 	build_restore_work_registers(&p);
 #ifdef CONFIG_CPU_MICROMIPS
 	if ((unsigned long)tlb_do_page_fault_1 & 1) {

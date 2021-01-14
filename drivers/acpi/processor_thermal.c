@@ -105,9 +105,10 @@ static struct notifier_block acpi_thermal_cpufreq_notifier_block = {
 
 static int cpufreq_get_max_state(unsigned int cpu)
 {
+#ifndef CONFIG_CPU_LOONGSON3
 	if (!cpu_has_cpufreq(cpu))
 		return 0;
-
+#endif
 	return CPUFREQ_THERMAL_MAX_STEP;
 }
 

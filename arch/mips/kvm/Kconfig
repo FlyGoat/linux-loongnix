@@ -25,6 +25,11 @@ config KVM
 	select HAVE_KVM_VCPU_ASYNC_IOCTL
 	select KVM_MMIO
 	select MMU_NOTIFIER
+	select HAVE_KVM_IRQCHIP
+	select HAVE_KVM_IRQFD
+	select HAVE_KVM_IRQ_ROUTING
+	select HAVE_KVM_EVENTFD
+	select HAVE_KVM_MSI
 	select SRCU
 	---help---
 	  Support for hosting Guest kernels.
@@ -32,7 +37,7 @@ config KVM
 choice
 	prompt "Virtualization mode"
 	depends on KVM
-	default KVM_MIPS_TE
+	default KVM_MIPS_VZ
 
 config KVM_MIPS_TE
 	bool "Trap & Emulate"
@@ -69,6 +74,15 @@ config KVM_MIPS_DEBUG_COP0_COUNTERS
 	  Maintain statistics for Guest COP0 accesses.
 	  A histogram of COP0 accesses is printed when the VM is
 	  shutdown.
+
+	  If unsure, say N.
+
+config KVM_LOONGSON_IOAPIC_READ_OPT
+	bool "Open Loongson 7A IOAPIC Read Optimization"
+	depends on KVM && CPU_LOONGSON3
+	---help---
+	  Optimize KVM interrupt register reads with read-only
+          memory pages.Effective for the Loongson platform.
 
 	  If unsure, say N.
 

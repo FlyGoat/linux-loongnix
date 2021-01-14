@@ -24,7 +24,14 @@
  */
 
 #include <linux/pci.h>
+#include <irq.h>
 #include <boot_param.h>
+#include <workarounds.h>
+#include <loongson.h>
+#include <loongson-pch.h>
+#include <linux/vgaarb.h>
+
+int ls7a_guest_pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin);
 
 static void print_fixup_info(const struct pci_dev *pdev)
 {
@@ -32,8 +39,24 @@ static void print_fixup_info(const struct pci_dev *pdev)
 			pdev->vendor, pdev->device, pdev->irq);
 }
 
+int ls7a_guest_pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+{
+	int irq;
+	u8 tmp;
+
+	pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &tmp);
+	slot = pci_common_swizzle(dev, &tmp);
+
+	irq = LS7A_PCH_IRQ_BASE + 16 + ((slot * 4 + tmp - 1) & 0xf);
+	return irq;
+}
+
+
 int pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
+	if (cpu_guestmode)
+		return ls7a_guest_pcibios_map_irq(dev, slot, pin);
+
 	print_fixup_info(dev);
 	return dev->irq;
 }
@@ -61,11 +84,42 @@ static void pci_fixup_radeon(struct pci_dev *pdev)
 		 PCI_ROM_RESOURCE, res);
 }
 
-DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_ATI, PCI_ANY_ID,
+DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_ATI, 0x9615,
 				PCI_CLASS_DISPLAY_VGA, 8, pci_fixup_radeon);
+
+
+static void pci_fixup_ls7a1000(struct pci_dev *pdev)
+{
+	struct pci_dev *pDefVga = NULL;
+
+	while ((pDefVga = pci_get_class(PCI_CLASS_DISPLAY_VGA << 8, pDefVga))) {
+		if (pDefVga->vendor != PCI_VENDOR_ID_LOONGSON) {
+			vga_set_default_device(pDefVga);
+			dev_info(&pdev->dev,
+				"Overriding boot device as %X:%X\n",
+				pDefVga->vendor, pDefVga->device);
+		}
+	}
+}
+DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC,
+		PCI_CLASS_DISPLAY_VGA, 8, pci_fixup_ls7a1000);
+
+DECLARE_PCI_FIXUP_CLASS_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC,
+		PCI_CLASS_DISPLAY_OTHER, 8, pci_fixup_ls7a1000);
+
 
 /* Do platform specific device initialization at pci_enable_device() time */
 int pcibios_plat_dev_init(struct pci_dev *dev)
 {
-	return 0;
+	int ret;
+	dev->dev.archdata.dma_attrs = 0;
+	if (loongson_sysconf.workarounds & WORKAROUND_PCIE_DMA)
+		dev->dev.archdata.dma_attrs = DMA_ATTR_FORCE_SWIOTLB;
+
+	if (loongson_pch->pcibios_dev_init)
+		ret = loongson_pch->pcibios_dev_init(dev);
+	else
+		ret = 0;
+
+	return ret;
 }

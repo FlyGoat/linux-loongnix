@@ -170,6 +170,12 @@ static struct arch architectures[] = {
 			.comment_char = '#',
 		},
 	},
+	{
+		.name = "mips",
+		.objdump = {
+			.comment_char = '#',
+		}
+	},
 };
 
 static void ins__delete(struct ins_operands *ops)

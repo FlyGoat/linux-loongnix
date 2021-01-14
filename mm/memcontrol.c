@@ -1017,8 +1017,9 @@ struct mem_cgroup *mem_cgroup_iter(struct mem_cgroup *root,
 out_unlock:
 	rcu_read_unlock();
 out:
-	if (prev && prev != root)
+	if (prev && prev != root) {
 		css_put(&prev->css);
+	}
 
 	return memcg;
 }

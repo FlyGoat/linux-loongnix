@@ -46,6 +46,7 @@ obj-$(CONFIG_CPU_R4K_FPU)	+= r4k_fpu.o
 obj-$(CONFIG_CPU_R3000)		+= r2300_fpu.o
 obj-$(CONFIG_CPU_TX39XX)	+= r2300_fpu.o
 
+obj-y				+= acpi/
 obj-$(CONFIG_SMP)		+= smp.o
 obj-$(CONFIG_SMP_UP)		+= smp-up.o
 obj-$(CONFIG_CPU_BMIPS)		+= smp-bmips.o bmips_vec.o bmips_5xxx_init.o
@@ -106,6 +107,10 @@ obj-$(CONFIG_HW_PERF_EVENTS)	+= perf_event_mipsxx.o
 
 obj-$(CONFIG_JUMP_LABEL)	+= jump_label.o
 obj-$(CONFIG_UPROBES)		+= uprobes.o
+
+obj-$(CONFIG_AUDITSYSCALL_O32)	+= audit-o32.o
+obj-$(CONFIG_AUDITSYSCALL_N32)	+= audit-n32.o
+obj-$(CONFIG_AUDITSYSCALL)	+= audit-native.o
 
 obj-$(CONFIG_MIPS_CM)		+= mips-cm.o
 obj-$(CONFIG_MIPS_CPC)		+= mips-cpc.o

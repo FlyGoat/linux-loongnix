@@ -10,18 +10,123 @@
  * option) any later version.
  */
 
+#include <linux/gpio.h>
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <asm/bootinfo.h>
 #include <boot_param.h>
+#include <loongson.h>
+#include <loongson-pch.h>
 #include <loongson_hwmon.h>
 #include <workarounds.h>
+#include <linux/acpi.h>
+
+/*
+ * Kernel helper policy
+ *
+ * Fan is controlled by EC in laptop pruducts, but EC can not get the current
+ * cpu temperature which used for adjusting the current fan speed.
+ *
+ * So, kernel read the CPU temperature and notify it to EC per second,
+ * that's all!
+ */
+struct loongson_fan_policy kernel_helper_policy = {
+	.type = KERNEL_HELPER_POLICY,
+	.adjust_period = 1,
+	.depend_temp = loongson3_cpu_temp,
+};
+
+/*
+ * Policy at step mode
+ *
+ * up_step array    |   down_step array
+ *                  |
+ * [min, 50),  50%  |   (min, 45),  50%
+ * [50,  60),  60%  |   [45,  55),  60%
+ * [60,  70),  70%  |   [55,  65),  70%
+ * [70,  80),  80%  |   [65,  75),  80%
+ * [80,  max), 100% |   [75,  max), 100%
+ *
+ */
+struct loongson_fan_policy step_speed_policy = {
+	.type = STEP_SPEED_POLICY,
+	.adjust_period = 1,
+	.depend_temp = loongson3_cpu_temp,
+	.up_step_num = 5,
+	.down_step_num = 5,
+	.up_step = {
+			{MIN_TEMP, 50,    50},
+			{   50,    60,    60},
+			{   60,    70,    70},
+			{   70,    80,    80},
+			{   80, MAX_TEMP, 100},
+		   },
+	.down_step = {
+			{MIN_TEMP, 45,    50},
+			{   45,    55,    60},
+			{   55,    65,    70},
+			{   65,    75,    80},
+			{   75, MAX_TEMP, 100},
+		     },
+};
+
+/*
+ * Constant speed policy
+ *
+ */
+struct loongson_fan_policy constant_speed_policy = {
+	.type = CONSTANT_SPEED_POLICY,
+};
+
+/*
+ * Loongson3 GPIO
+ */
+static struct resource loongson_gpio_resources[] = {
+	[0] = {
+		.start  = LOONGSON_REG_GPIO_BASE,
+		.end    = LOONGSON_REG_GPIO_BASE + 4,
+		.flags  = IORESOURCE_MEM,
+	},
+};
+
+static struct platform_gpio_data loongson3_gpio_data = {
+	.gpio_conf = 4,
+	.gpio_out  = 0,
+	.gpio_in   = 0,
+	.gpio_base = 0,
+	.ngpio     = 16,
+};
+static struct platform_device loongson_gpio_device = {
+	.name   = "loongson-gpio",
+	.id     = 0,
+	.num_resources  = ARRAY_SIZE(loongson_gpio_resources),
+	.resource       = loongson_gpio_resources,
+	.dev	= {
+			.platform_data = &loongson3_gpio_data,
+	},
+};
+
+#define GPIO_LCD_CNTL		5
+#define GPIO_BACKLIGHIT_CNTL	7
+
+static struct platform_device loongson_laptop_device = {
+	.name			= "loongson-laptop",
+	.id   			= 4,
+};
+
+static struct platform_device loongson_thermal_device = {
+	.name			= "loongson3_thermal",
+	.id   			= 0,
+};
 
 static int __init loongson3_platform_init(void)
 {
 	int i;
 	struct platform_device *pdev;
+
+	loongson_pch->pch_arch_initcall();
 
 	if (loongson_sysconf.ecname[0] != '\0')
 		platform_device_register_simple(loongson_sysconf.ecname, -1, NULL, 0);
@@ -37,7 +142,27 @@ static int __init loongson3_platform_init(void)
 		platform_device_register(pdev);
 	}
 
+	if (loongson_sysconf.workarounds & WORKAROUND_LVDS_GPIO) {
+		gpio_request(GPIO_LCD_CNTL,  "gpio_lcd_cntl");
+		gpio_request(GPIO_BACKLIGHIT_CNTL, "gpio_bl_cntl");
+	}
+
+	platform_device_register(&loongson_gpio_device);
+	platform_device_register(&loongson_laptop_device);
+	platform_device_register(&loongson_thermal_device);
+
+	return 0;
+}
+
+extern void power_button_init(void);
+static int __init loongson3_device_init(void)
+{
+	loongson_pch->pch_device_initcall();
+
+	if (acpi_disabled)
+		power_button_init();
 	return 0;
 }
 
 arch_initcall(loongson3_platform_init);
+device_initcall(loongson3_device_init);

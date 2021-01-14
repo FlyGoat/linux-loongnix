@@ -31,6 +31,10 @@
 #include <trace/events/kvm.h>
 #include "irq.h"
 
+#ifdef CONFIG_CPU_LOONGSON3
+#include "ls7a_irq.h"
+#endif
+
 int kvm_irq_map_gsi(struct kvm *kvm,
 		    struct kvm_kernel_irq_routing_entry *entries, int gsi)
 {

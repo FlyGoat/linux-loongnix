@@ -24,8 +24,15 @@
 #include <asm/pgtable.h>
 #include <asm/tlb.h>
 #include <asm/tlbmisc.h>
+#ifdef CONFIG_CPU_LOONGSON3
+#include <loongson.h>
+#endif
 
 extern void build_tlb_refill_handler(void);
+
+#ifdef CONFIG_CPU_LOONGSON3
+int guest_fixup;
+#endif
 
 /*
  * LOONGSON-2 has a 4 entry itlb which is a subset of jtlb, LOONGSON-3 has
@@ -36,10 +43,10 @@ static inline void flush_micro_tlb(void)
 {
 	switch (current_cpu_type()) {
 	case CPU_LOONGSON2:
+	case CPU_LOONGSON3:
 		write_c0_diag(LOONGSON_DIAG_ITLB);
 		break;
-	case CPU_LOONGSON3:
-		write_c0_diag(LOONGSON_DIAG_ITLB | LOONGSON_DIAG_DTLB);
+	case CPU_LOONGSON3_COMP:
 		break;
 	default:
 		break;
@@ -50,6 +57,11 @@ static inline void flush_micro_tlb_vm(struct vm_area_struct *vma)
 {
 	if (vma->vm_flags & VM_EXEC)
 		flush_micro_tlb();
+}
+
+static inline void local_flush_tlb_all_fast(void)
+{
+	change_c0_diag(0x300c, 0x300c);
 }
 
 void local_flush_tlb_all(void)
@@ -71,22 +83,48 @@ void local_flush_tlb_all(void)
 	 * Blast 'em all away.
 	 * If there are any wired entries, fall back to iterating
 	 */
-	if (cpu_has_tlbinv && !entry) {
-		if (current_cpu_data.tlbsizevtlb) {
-			write_c0_index(0);
-			mtc0_tlbw_hazard();
-			tlbinvf();  /* invalidate VTLB */
-		}
-		ftlbhighset = current_cpu_data.tlbsizevtlb +
-			current_cpu_data.tlbsizeftlbsets;
-		for (entry = current_cpu_data.tlbsizevtlb;
-		     entry < ftlbhighset;
-		     entry++) {
-			write_c0_index(entry);
-			mtc0_tlbw_hazard();
-			tlbinvf();  /* invalidate one FTLB set */
+	if (!entry) {
+		if (cpu_has_tlbinv) {
+#ifndef CONFIG_CPU_LOONGSON3
+			if (current_cpu_data.tlbsizevtlb) {
+				write_c0_index(0);
+				mtc0_tlbw_hazard();
+				tlbinvf();  /* invalidate VTLB */
+			}
+			ftlbhighset = current_cpu_data.tlbsizevtlb +
+				current_cpu_data.tlbsizeftlbsets;
+			for (entry = current_cpu_data.tlbsizevtlb;
+			     entry < ftlbhighset;
+			     entry++) {
+				write_c0_index(entry);
+				mtc0_tlbw_hazard();
+				tlbinvf();  /* invalidate one FTLB set */
+			}
+#else			 /* here is optimization for 3A2000+ */
+
+			local_flush_tlb_all_fast();
+			local_irq_restore(flags);
+			return;
+#endif
+		} else {
+			old_ctx = read_c0_entryhi();
+			write_c0_entrylo0(0);
+			write_c0_entrylo1(0);
+			while (entry < current_cpu_data.tlbsize) {
+				/* Make sure all entries differ. */
+				write_c0_entryhi(UNIQUE_ENTRYHI(entry));
+				write_c0_index(entry);
+				mtc0_tlbw_hazard();
+				tlb_write_indexed();
+				entry++;
+			}
+			tlbw_use_hazard();
+			write_c0_entryhi(old_ctx);
 		}
 	} else {
+		old_ctx = read_c0_entryhi();
+		write_c0_entrylo0(0);
+		write_c0_entrylo1(0);
 		while (entry < current_cpu_data.tlbsize) {
 			/* Make sure all entries differ. */
 			write_c0_entryhi(UNIQUE_ENTRYHI(entry));
@@ -95,9 +133,32 @@ void local_flush_tlb_all(void)
 			tlb_write_indexed();
 			entry++;
 		}
+
+		if (cpu_has_tlbinv) {
+			ftlbhighset = current_cpu_data.tlbsizevtlb +
+				current_cpu_data.tlbsizeftlbsets;
+			for (entry = current_cpu_data.tlbsizevtlb;
+				entry < ftlbhighset; entry++) {
+				write_c0_index(entry);
+				mtc0_tlbw_hazard();
+				tlbinvf();  /* invalidate one FTLB set */
+			}
+
+		} else {
+
+			while (entry < current_cpu_data.tlbsize) {
+				/* Make sure all entries differ. */
+				write_c0_entryhi(UNIQUE_ENTRYHI(entry));
+				write_c0_index(entry);
+				mtc0_tlbw_hazard();
+				tlb_write_indexed();
+				entry++;
+			}
+
+		}
+		tlbw_use_hazard();
+		write_c0_entryhi(old_ctx);
 	}
-	tlbw_use_hazard();
-	write_c0_entryhi(old_ctx);
 	htw_start();
 	flush_micro_tlb();
 	local_irq_restore(flags);
@@ -109,12 +170,13 @@ EXPORT_SYMBOL(local_flush_tlb_all);
 void local_flush_tlb_mm(struct mm_struct *mm)
 {
 	int cpu;
+	unsigned long asid;
 
 	preempt_disable();
 
 	cpu = smp_processor_id();
 
-	if (cpu_context(cpu, mm) != 0) {
+	if ((asid = cpu_context(cpu, mm)) != 0) {
 		drop_mmu_context(mm, cpu);
 	}
 
@@ -506,6 +568,12 @@ static void r4k_tlb_configure(void)
 	    current_cpu_type() == CPU_R14000 ||
 	    current_cpu_type() == CPU_R16000)
 		write_c0_framemask(0);
+
+#ifdef CONFIG_CPU_LOONGSON3
+	if ((current_cpu_type() == CPU_LOONGSON3_COMP) &&
+			cpu_guestmode)
+		guest_fixup = 1;
+#endif
 
 	if (cpu_has_rixi) {
 		/*

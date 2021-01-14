@@ -46,6 +46,9 @@ struct pci_controller {
 	   and XFree86. Eventually will be removed. */
 	unsigned int need_domain_info;
 #endif
+#ifdef CONFIG_ACPI
+	struct acpi_device *companion;
+#endif
 
 	/* Optional access methods for reading/writing the bus number
 	   of the PCI controller */
@@ -58,6 +61,11 @@ struct pci_controller {
  */
 extern void register_pci_controller(struct pci_controller *hose);
 
+/*
+ * Get pci root info.
+ */
+extern void get_pci_root_info (struct pci_controller **controller, struct list_head *resources, bool is_use_crs);
+extern void vz_get_pci_root_info (struct pci_controller **controller, struct list_head *resources, bool is_use_crs);
 /*
  * board supplied pci irq fixup routine
  */

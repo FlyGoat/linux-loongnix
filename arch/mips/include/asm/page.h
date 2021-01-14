@@ -221,11 +221,16 @@ static inline unsigned long ___pa(unsigned long x)
 
 static inline int pfn_valid(unsigned long pfn)
 {
+#if defined(CONFIG_CPU_LOONGSON2K)
+	extern int page_is_ram(unsigned long pagenr);
+	return page_is_ram(pfn);
+#else
 	/* avoid <linux/mm.h> include hell */
 	extern unsigned long max_mapnr;
 	unsigned long pfn_offset = ARCH_PFN_OFFSET;
 
 	return pfn >= pfn_offset && pfn < max_mapnr;
+#endif
 }
 
 #elif defined(CONFIG_SPARSEMEM)

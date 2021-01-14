@@ -25,6 +25,17 @@
 #include <asm/page.h>
 #include <asm/vdso.h>
 
+#ifdef CONFIG_LOONGSON_HPET
+extern void __iomem *hpet_mmio_base;
+extern bool loongson_hpet_present(void);
+#else
+void __iomem *hpet_mmio_base;
+bool loongson_hpet_present(void)
+{
+	return false;
+}
+#endif
+
 /* Kernel-provided data used by the VDSO. */
 static union mips_vdso_data vdso_data __page_aligned_data;
 
@@ -117,7 +128,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
 	struct mips_vdso_image *image = current->thread.abi->vdso;
 	struct mm_struct *mm = current->mm;
-	unsigned long gic_size, vvar_size, size, base, data_addr, vdso_addr, gic_pfn;
+	unsigned long exttimer_size, vvar_size, size, base, data_addr, vdso_addr, exttimer_pfn;
 	struct vm_area_struct *vma;
 	int ret;
 
@@ -142,8 +153,8 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	 * only map a page even though the total area is 64K, as we only need
 	 * the counter registers at the start.
 	 */
-	gic_size = mips_gic_present() ? PAGE_SIZE : 0;
-	vvar_size = gic_size + PAGE_SIZE;
+	exttimer_size = (mips_gic_present() || loongson_hpet_present()) ? PAGE_SIZE : 0;
+	vvar_size = exttimer_size + PAGE_SIZE;
 	size = vvar_size + image->size;
 
 	/*
@@ -167,10 +178,10 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	 */
 	if (cpu_has_dc_aliases) {
 		base = __ALIGN_MASK(base, shm_align_mask);
-		base += ((unsigned long)&vdso_data - gic_size) & shm_align_mask;
+		base += ((unsigned long)&vdso_data - exttimer_size) & shm_align_mask;
 	}
 
-	data_addr = base + gic_size;
+	data_addr = base + exttimer_size;
 	vdso_addr = data_addr + PAGE_SIZE;
 
 	vma = _install_special_mapping(mm, base, vvar_size,
@@ -182,10 +193,13 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	}
 
 	/* Map GIC user page. */
-	if (gic_size) {
-		gic_pfn = virt_to_phys(mips_gic_base + MIPS_GIC_USER_OFS) >> PAGE_SHIFT;
+	if (exttimer_size) {
+		if(mips_gic_present())
+			exttimer_pfn = virt_to_phys(mips_gic_base + MIPS_GIC_USER_OFS) >> PAGE_SHIFT;
+		else
+			exttimer_pfn = virt_to_phys(hpet_mmio_base) >> PAGE_SHIFT;
 
-		ret = io_remap_pfn_range(vma, base, gic_pfn, gic_size,
+		ret = io_remap_pfn_range(vma, base, exttimer_pfn, exttimer_size,
 					 pgprot_noncached(PAGE_READONLY));
 		if (ret)
 			goto out;

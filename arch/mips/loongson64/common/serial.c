@@ -13,11 +13,13 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/serial_8250.h>
-
+#include <linux/acpi.h>
 #include <asm/bootinfo.h>
 
 #include <loongson.h>
 #include <machine.h>
+
+extern struct fwnode_handle *pch_irqdomain_handle(int id);
 
 #define PORT(int, clk)			\
 {								\
@@ -47,7 +49,7 @@ static struct plat_serial8250_port uart8250_data[][MAX_UARTS + 1] = {
 	[MACH_DEXXON_GDIUM2F10]	= {PORT_M(3, 3686400), {} },
 	[MACH_LEMOTE_NAS]	= {PORT_M(3, 3686400), {} },
 	[MACH_LEMOTE_LL2F]	= {PORT(3, 1843200), {} },
-	[MACH_LOONGSON_GENERIC]	= {PORT_M(2, 25000000), {} },
+	[MACH_LOONGSON_GENERIC]	= {PORT_M(2, 33000000), {} },
 	[MACH_LOONGSON_END]	= {},
 };
 
@@ -56,27 +58,51 @@ static struct platform_device uart8250_device = {
 	.id = PLAT8250_DEV_PLATFORM,
 };
 
+static int __init check_pnp_uart0(void)
+{
+	return acpi_dev_present("PNP0501", "0", -1);
+}
+
 static int __init serial_init(void)
 {
-	int i;
+	int i, uart0_irq = 0, id;
 	unsigned char iotype;
 
-	iotype = uart8250_data[mips_machtype][0].iotype;
+	if (!check_pnp_uart0()) {
+		if (liointc_handle && !cpu_guestmode) {
+			struct irq_fwspec fwspec;
+			fwspec.fwnode = liointc_handle;
+			fwspec.param[0] = LOONGSON_CPU_UART0_VEC;
+			fwspec.param_count = 1;
+			uart0_irq = irq_create_fwspec_mapping(&fwspec);
+		} else if (cpu_guestmode) {
+			struct irq_fwspec fwspec;
 
-	if (UPIO_MEM == iotype) {
-		uart8250_data[mips_machtype][0].mapbase =
-			loongson_uart_base[0];
-		uart8250_data[mips_machtype][0].membase =
-			(void __iomem *)_loongson_uart_base[0];
+			id = find_pch_pic(LOONGSON_GUEST_UART0_IRQ);
+			fwspec.fwnode = pch_irqdomain_handle(id);
+			fwspec.param[0] = LOONGSON_GUEST_UART0_IRQ;
+			fwspec.param_count = 1;
+			uart0_irq = irq_create_fwspec_mapping(&fwspec);
+		}
+		if (uart0_irq > 0)
+			uart8250_data[mips_machtype][0].irq = uart0_irq;
+		iotype = uart8250_data[mips_machtype][0].iotype;
+		if (UPIO_MEM == iotype) {
+			uart8250_data[mips_machtype][0].mapbase =
+				loongson_uart_base[0];
+			uart8250_data[mips_machtype][0].membase =
+				(void __iomem *)_loongson_uart_base[0];
+		} else if (UPIO_PORT == iotype)
+			uart8250_data[mips_machtype][0].iobase =
+				loongson_uart_base[0] - LOONGSON_PCIIO_BASE;
+
+		if (loongson_sysconf.uarts[0].uartclk)
+			uart8250_data[mips_machtype][0].uartclk =
+				loongson_sysconf.uarts[0].uartclk;
+	} else {
+		memset(&uart8250_data[mips_machtype][0],
+			0, sizeof(struct plat_serial8250_port));
 	}
-	else if (UPIO_PORT == iotype)
-		uart8250_data[mips_machtype][0].iobase =
-			loongson_uart_base[0] - LOONGSON_PCIIO_BASE;
-
-	if (loongson_sysconf.uarts[0].uartclk)
-		uart8250_data[mips_machtype][0].uartclk =
-			loongson_sysconf.uarts[0].uartclk;
-
 	for (i = 1; i < loongson_sysconf.nr_uarts; i++) {
 		iotype = loongson_sysconf.uarts[i].iotype;
 		uart8250_data[mips_machtype][i].iotype = iotype;
@@ -105,7 +131,6 @@ static int __init serial_init(void)
 	memset(&uart8250_data[mips_machtype][loongson_sysconf.nr_uarts],
 			0, sizeof(struct plat_serial8250_port));
 	uart8250_device.dev.platform_data = uart8250_data[mips_machtype];
-
 	return platform_device_register(&uart8250_device);
 }
 module_init(serial_init);
